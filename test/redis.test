@@ -1,0 +1,336 @@
+#!/usr/bin/env tclsh
+
+package require tcltest
+
+source ../src/redis.tcl
+
+namespace eval redis::test {
+
+  proc CLEANUP {} {
+    set ::redis::id 0
+    array set ::redis::fd {}
+    array set ::redis::blocking {}
+    array set ::redis::deferred {}
+    array set ::redis::callback {}
+    array set ::redis::state {} ;# State in non-blocking reply reading
+    array set ::redis::statestack {} ;# Stack of states, for nested mbulks
+    catch {close $fd}
+  }
+
+  namespace import ::tcltest::test
+  proc ::socket { server port } { open /tmp/redistestfile.sock w+ }
+  
+  test clientInit {Test client retuns ::redis::redisHandle} -body {
+    set r [redis]
+  } -cleanup CLEANUP -match regexp -result {::redis::redisHandle\d+}
+
+  test __method__blocking-variable {Check that blocking sets blocking variable} -setup {
+    set id 1
+    set ::redis::blocking($id) 0
+    set fd [open /tmp/redistestfile.sock w+]
+    fconfigure $fd -translation binary
+    set val 1
+  } -body {
+    ::redis::__method__blocking $id $fd $val
+    return $::redis::blocking($id)
+  } -cleanup CLEANUP -result 1
+
+  test __method__blocking-fconfigure {Check that blocking sets blocking on channel} -setup {
+    set id 1
+    set ::redis::blocking($id) 0
+    set fd [open /tmp/redistestfile.sock w+]
+    fconfigure $fd -translation binary
+    set val 1
+  } -body {
+    ::redis::__method__blocking $id $fd $val
+    return [fconfigure $fd -blocking]
+  } -cleanup CLEANUP -result 1
+
+  test __method__blocking-fconfigure {Check that blocking sets blocking on channel} -setup {
+    set id 1
+    set ::redis::blocking($id) 0
+    set fd [open /tmp/redistestfile.sock w+]
+    fconfigure $fd -translation binary
+    set val 1
+  } -body {
+    ::redis::__method__blocking $id $fd $val
+    return [fconfigure $fd -blocking]
+  } -cleanup CLEANUP -result 1
+
+  test redis_write {Check that redis_write outputs properly} -setup {
+    set fd [open /tmp/redistestfile.sock w+]
+    fconfigure $fd -translation binary
+    set buf {lwkjeflwkj slk 'slsj\n slkdj}
+  } -body {
+    ::redis::redis_write $fd $buf
+    seek $fd 0
+    set rbuf [read $fd]
+    if { $rbuf eq $buf } {
+      return 1
+    }
+    return 0
+  } -cleanup CLEANUP -result 1
+
+  test redis_writenl {Check that redis_writenl outputs properly} -setup {
+    set fd [open /tmp/redistestfile.sock w+]
+    fconfigure $fd -translation binary
+    set buf {lwkjeflwkj slk 'slsj\n slkdj}
+  } -body {
+    ::redis::redis_writenl $fd $buf
+    seek $fd 0
+    set rbuf [read $fd]
+    if { $rbuf eq "$buf\r\n" } {
+      return 1
+    }
+    return 0
+  } -cleanup CLEANUP -result 1
+  
+  test redis_readnl {Check that redis_readnl outputs properly} -setup {
+    set fd [open /tmp/redistestfile.sock w+]
+    fconfigure $fd -translation binary
+    set buf {lwkjeflwkj slk 'slsj\n slkdj}
+    puts -nonewline $fd $buf
+    puts -nonewline $fd "\r\n"
+    seek $fd 0
+  } -body {
+    set rbuf [::redis::redis_readnl $fd [string length $buf] ]
+    if { $rbuf eq $buf } {
+      return 1
+    }
+    return 0
+  } -cleanup CLEANUP -result 1
+
+  test redis_read_line {Check that redis_read_line outputs properly} -setup {
+    set fd [open /tmp/redistestfile.sock w+]
+    fconfigure $fd -translation binary
+    set buf {lwkjeflwkj slk 'slsj\n slkdj}
+    puts -nonewline $fd $buf
+    puts -nonewline $fd "\r\n"
+    seek $fd 0
+  } -body {
+    set rbuf [::redis::redis_read_line $fd ]
+    if { $rbuf eq "$buf" } {
+      return 1
+    }
+    return 0
+  } -cleanup CLEANUP -result 1
+
+  test redis_bulk_read {Check that redis_bulk_read outputs properly} -setup {
+    set fd [open /tmp/redistestfile.sock w+]
+    fconfigure $fd -translation binary
+    set buf {lwkjeflwkj slk 'slsj\n slkdj}
+    puts -nonewline $fd "[string length $buf]"
+    puts -nonewline $fd "\r\n"
+    puts -nonewline $fd $buf
+    puts -nonewline $fd "\r\n"
+    seek $fd 0
+  } -body {
+    set rbuf [::redis::redis_bulk_read $fd ]
+    if { $rbuf eq "$buf" } {
+      return 1
+    }
+    return 0
+  } -cleanup CLEANUP -result 1
+
+  test redis_read_reply-integer {Check that redis_read_reply returns properly for integer} -setup {
+    set fd [open /tmp/redistestfile.sock w+]
+    fconfigure $fd -translation binary
+    set buf 1
+    puts -nonewline $fd ":$buf"
+    puts -nonewline $fd "\r\n"
+    seek $fd 0
+  } -body {
+    set rbuf [::redis::redis_read_reply $fd ]
+    if { $rbuf eq "$buf" } {
+      return 1
+    }
+    return 0
+  } -cleanup CLEANUP -result 1
+
+  test redis_read_reply-status {Check that redis_read_reply returns properly for status message} -setup {
+    set fd [open /tmp/redistestfile.sock w+]
+    fconfigure $fd -translation binary
+    set buf OK
+    puts -nonewline $fd "+$buf"
+    puts -nonewline $fd "\r\n"
+    seek $fd 0
+  } -body {
+    set rbuf [::redis::redis_read_reply $fd ]
+    if { $rbuf eq "$buf" } {
+      return 1
+    }
+    return 0
+  } -cleanup CLEANUP -result 1
+
+  test redis_read_reply-error {Check that redis_read_reply returns properly for status error} -setup {
+    set fd [open /tmp/redistestfile.sock w+]
+    fconfigure $fd -translation binary
+    set buf ERR
+    puts -nonewline $fd "-$buf"
+    puts -nonewline $fd "\r\n"
+    seek $fd 0
+  } -body {
+    set rbuf [::redis::redis_read_reply $fd ]
+  } -cleanup CLEANUP -result ERR -returnCodes error
+
+  test redis_read_reply-bulk {Check that redis_read_reply returns properly for bulk read} -setup {
+    set fd [open /tmp/redistestfile.sock w+]
+    fconfigure $fd -translation binary
+    set buf {lwkjeflwkj slk 'slsj\n slkdj}
+    puts -nonewline $fd "$[string length $buf]"
+    puts -nonewline $fd "\r\n"
+    puts -nonewline $fd $buf
+    puts -nonewline $fd "\r\n"
+    seek $fd 0
+  } -body {
+    set rbuf [::redis::redis_read_reply $fd ]
+    if { $rbuf eq "$buf" } {
+      return 1
+    }
+    return 0
+  } -cleanup CLEANUP -result 1
+
+  test redis_read_reply-mbulk {Check that redis_read_reply returns properly for mbulk read} -setup {
+    set fd [open /tmp/redistestfile.sock w+]
+    fconfigure $fd -translation binary
+    set buf [list xxxxxxx yyyyyyyyyyyy ]
+    puts -nonewline $fd "*3"
+    puts -nonewline $fd "\r\n"
+    puts -nonewline $fd "$[string length [lindex $buf 0]]"
+    puts -nonewline $fd "\r\n"
+    puts -nonewline $fd "[lindex $buf 0]"
+    puts -nonewline $fd "\r\n"
+    puts -nonewline $fd "$[string length [lindex $buf 1]]"
+    puts -nonewline $fd "\r\n"
+    puts -nonewline $fd "[lindex $buf 1]"
+    puts -nonewline $fd "\r\n"
+    puts -nonewline $fd "+OK"
+    puts -nonewline $fd "\r\n"
+    seek $fd 0
+  } -body {
+    set rbuf [::redis::redis_read_reply $fd ]
+    if { $rbuf eq "$buf OK" } {
+      return 1
+    }
+    return 0
+  } -cleanup CLEANUP -result 1
+
+  test redis_call_callback {Check that redis_call_callback calls callback properly} -setup {
+    set id 1
+    proc ::CB { id type reply } {
+      puts -nonewline "$id $type $reply"
+    }
+    set ::redis::callback($id) [list CB]
+  } -body {
+    ::redis::redis_call_callback $id test reply
+  } -cleanup { CLEANUP; rename ::CB {} }  -output "::redis::redisHandle1 test reply"
+
+  test redis_readable-eof {Check that redis_readable returns properly for eof read} -setup {
+    set fd [open /tmp/redistestfile.sock w+]
+    set id 1
+    fconfigure $fd -translation binary -blocking 0
+    gets $fd
+    proc ::CB { id type reply } {
+      puts -nonewline "$id $type $reply"
+    }
+    set ::redis::callback($id) [list CB]
+  } -body {
+    ::redis::redis_readable $fd $id
+  } -cleanup CLEANUP -output {::redis::redisHandle1 eof }
+
+  test redis_readable-status {Check that redis_readable returns properly for status line} -setup {
+    set fd [open /tmp/redistestfile.sock w+]
+    set id 1
+    ::redis::redis_reset_state $id
+    fconfigure $fd -translation binary -blocking 0
+    proc ::CB { id type reply } {
+      puts -nonewline "$id $type $reply"
+    }
+    set ::redis::callback($id) [list CB]
+    puts -nonewline $fd "+OK"
+    puts -nonewline $fd "\r\n"
+    seek $fd 0
+  } -body {
+    ::redis::redis_readable $fd $id
+  } -cleanup CLEANUP -output {::redis::redisHandle1 reply OK}
+
+  test redis_readable-bulk {Check that redis_readable returns properly for bulk line} -setup {
+    set fd [open /tmp/redistestfile.sock w+]
+    set id 1
+    ::redis::redis_reset_state $id
+    fconfigure $fd -translation binary -blocking 0
+    proc ::CB { id type reply } {
+      puts -nonewline "$id $type $reply"
+    }
+    set ::redis::callback($id) [list CB]
+    puts -nonewline $fd {$8}
+    puts -nonewline $fd "\r\n"
+    puts -nonewline $fd "abcdefgh"
+    puts -nonewline $fd "\r\n"
+    seek $fd 0
+  } -body {
+    ::redis::redis_readable $fd $id
+    ::redis::redis_readable $fd $id
+  } -cleanup CLEANUP -output {::redis::redisHandle1 reply abcdefgh}
+
+  test redis_readable-mbulk {Check that redis_readable returns properly for mbulk line} -setup {
+    set fd [open /tmp/redistestfile.sock w+]
+    set id 1
+    ::redis::redis_reset_state $id
+    fconfigure $fd -translation binary -blocking 0
+    proc ::CB { id type reply } {
+      puts -nonewline "$id $type $reply"
+    }
+    set ::redis::callback($id) [list CB]
+    puts -nonewline $fd "*1"
+    puts -nonewline $fd "\r\n"
+    puts -nonewline $fd {$8}
+    puts -nonewline $fd "\r\n"
+    puts -nonewline $fd "abcdefgh"
+    puts -nonewline $fd "\r\n"
+    seek $fd 0
+  } -body {
+    ::redis::redis_readable $fd $id
+    ::redis::redis_readable $fd $id
+    ::redis::redis_readable $fd $id
+  } -cleanup CLEANUP -output {::redis::redisHandle1 reply abcdefgh}
+
+  test redis_readable-mbulk3 {Check that redis_readable returns properly for 3mbulk line} -setup {
+    set fd [open /tmp/redistestfile.sock w+]
+    set id 1
+    ::redis::redis_reset_state $id
+    fconfigure $fd -translation binary -blocking 0
+    proc ::CB { id type reply } {
+      puts -nonewline "$id $type $reply"
+    }
+    set ::redis::callback($id) [list CB]
+    puts -nonewline $fd "*3"
+    puts -nonewline $fd "\r\n"
+    puts -nonewline $fd {$8}
+    puts -nonewline $fd "\r\n"
+    puts -nonewline $fd "abcdefgh"
+    puts -nonewline $fd "\r\n"
+    puts -nonewline $fd {$8}
+    puts -nonewline $fd "\r\n"
+    puts -nonewline $fd "abcdefgh"
+    puts -nonewline $fd "\r\n"
+    puts -nonewline $fd {$8}
+    puts -nonewline $fd "\r\n"
+    puts -nonewline $fd "abcdefgh"
+    puts -nonewline $fd "\r\n"
+    seek $fd 0
+  } -body {
+    ::redis::redis_readable $fd $id
+    ::redis::redis_readable $fd $id
+    ::redis::redis_readable $fd $id
+    ::redis::redis_readable $fd $id
+    ::redis::redis_readable $fd $id
+    ::redis::redis_readable $fd $id
+    ::redis::redis_readable $fd $id
+  } -cleanup CLEANUP -output {::redis::redisHandle1 reply abcdefgh abcdefgh abcdefgh}
+
+}
+
+::tcltest::cleanupTests
+
+
