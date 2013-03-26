@@ -33,6 +33,7 @@ set ::redis::id 0
 array set ::redis::fd {}
 array set ::redis::blocking {}
 array set ::redis::deferred {}
+array set ::redis::subscribed {}
 array set ::redis::callback {}
 array set ::redis::state {} ;# State in non-blocking reply reading
 array set ::redis::statestack {} ;# Stack of states, for nested mbulks
@@ -43,6 +44,7 @@ proc redis {{server 127.0.0.1} {port 6379} {defer 0}} {
     set id [incr ::redis::id]
     set ::redis::fd($id) $fd
     set ::redis::blocking($id) 1
+    set ::redis::subscribed($id) 0
     set ::redis::deferred($id) $defer
     ::redis::redis_reset_state $id
     interp alias {} ::redis::redisHandle$id {} ::redis::__dispatch__ $id
@@ -52,20 +54,21 @@ proc ::redis::__dispatch__ {id method args} {
     set fd $::redis::fd($id)
     set blocking $::redis::blocking($id)
     set deferred $::redis::deferred($id)
-    if {$blocking == 0} {
-        if {[llength $args] == 0} {
-            error "Please provide a callback in non-blocking mode"
-        }
-        set callback [lindex $args end]
-        set args [lrange $args 0 end-1]
+    set subscribed $::redis::subscribed($id)
+    if {$subscribed} {
+        if { $method ne 'subscribe' || $method ne 'close' || $method ne 'setcallback' || $method ne 'unsubscribe' } {
+            error "This channel cannot be used for pub/sub purposes after subscription"
+        }  
     }
     if {[info command ::redis::__method__$method] eq {}} {
-        set cmd "*[expr {[llength $args]+1}]\r\n"
-        append cmd "$[string length $method]\r\n$method\r\n"
-        foreach a $args {
-            append cmd "$[string length $a]\r\n$a\r\n"
+        if {$blocking == 0} {
+            if {[llength $args] == 0} {
+               error "Please provide a callback in non-blocking mode"
+            }
+            set callback [lindex $args end]
+            set args [lrange $args 0 end-1]
         }
-        ::redis::redis_write $fd $cmd
+        ::redis::redis_write $fd [::redis::redis_format_message [list $method $args]]
         flush $fd
 
         if {!$deferred} {
@@ -82,6 +85,47 @@ proc ::redis::__dispatch__ {id method args} {
     } else {
         uplevel 1 [list ::redis::__method__$method $id $fd] $args
     }
+}
+
+proc ::redis::redis_format_message {args} {
+    set cmd "*[expr {[llength $args]}]\r\n"
+    foreach a $args {
+        append cmd "$[string length $a]\r\n$a\r\n"
+    }
+    return $cmd
+}
+
+proc ::redis::__method__setcallback {id fd val} {
+    set ::redis::callback($id) [list $callback]
+}
+
+proc ::redis::__method__subscribe {id fd args} {
+    set $::redis::subscribed($id) 1
+    if { $::redis::callback($id) eq {} } {
+        return -code error "A callback must be set prior to subscribing"
+    }
+    ::redis::__method__blocking $id $fd 0
+    fileevent $fd readable [list ::redis::redis_readable $fd $id]
+    ::redis::redis_write $fd [::redis::redis_format_message $args]
+    flush $fd
+}
+
+proc ::redis::__method__unsubscribe {id fd args} {
+    # TODO: change this to accept a list of channels
+    # to unsubscribe from, count channels to figure
+    # # of times to call read_reply, or if no channels
+    # provided loop until lindex $reply end == 0
+    set ::redis::callback($id) {}
+    ::redis::__method__blocking $id $fd 1
+    fileevent $fd readable {}
+    ::redis::redis_write $fd UNSUBSCRIBE
+    flush $fd
+    set reply [::redis::redis_read_reply $fd]
+    while { [lindex $reply end] > 0 } {
+        set reply [::redis::redis_read_reply $fd]
+    }
+    set ::redis::subscribed($id) [lindex $reply end]
+    return $reply
 }
 
 proc ::redis::__method__blocking {id fd val} {
@@ -105,6 +149,8 @@ proc ::redis::__method__close {id fd} {
     catch {close $fd}
     catch {unset ::redis::fd($id)}
     catch {unset ::redis::blocking($id)}
+    catch {unset ::redis::subscribed($id)}
+    catch {unset ::redis::deferred($id)}
     catch {unset ::redis::state($id)}
     catch {unset ::redis::statestack($id)}
     catch {unset ::redis::callback($id)}
@@ -177,7 +223,9 @@ proc ::redis::redis_reset_state id {
 
 proc ::redis::redis_call_callback {id type reply} {
     set cb [lindex $::redis::callback($id) 0]
-    set ::redis::callback($id) [lrange $::redis::callback($id) 1 end]
+    if { ! $::redis::subscribed($id) } {
+        set ::redis::callback($id) [lrange $::redis::callback($id) 1 end]
+    }
     uplevel #0 $cb [list ::redis::redisHandle$id $type $reply]
     ::redis::redis_reset_state $id
 }

@@ -11,6 +11,7 @@ namespace eval redis::test {
     array set ::redis::fd {}
     array set ::redis::blocking {}
     array set ::redis::deferred {}
+    array set ::redis::subscribed {}
     array set ::redis::callback {}
     array set ::redis::state {} ;# State in non-blocking reply reading
     array set ::redis::statestack {} ;# Stack of states, for nested mbulks
@@ -193,27 +194,12 @@ namespace eval redis::test {
   test redis_read_reply-mbulk {Check that redis_read_reply returns properly for mbulk read} -setup {
     set fd [open /tmp/redistestfile.sock w+]
     fconfigure $fd -translation binary
-    set buf [list xxxxxxx yyyyyyyyyyyy ]
-    puts -nonewline $fd "*3"
-    puts -nonewline $fd "\r\n"
-    puts -nonewline $fd "$[string length [lindex $buf 0]]"
-    puts -nonewline $fd "\r\n"
-    puts -nonewline $fd "[lindex $buf 0]"
-    puts -nonewline $fd "\r\n"
-    puts -nonewline $fd "$[string length [lindex $buf 1]]"
-    puts -nonewline $fd "\r\n"
-    puts -nonewline $fd "[lindex $buf 1]"
-    puts -nonewline $fd "\r\n"
-    puts -nonewline $fd "+OK"
-    puts -nonewline $fd "\r\n"
+    #puts -nonewline $fd [::redis::redis_format_message abcd xyzf 0]
+    puts -nonewline $fd [::redis::redis_format_message xxxxxxx yyyyyyyyyyyy z]
     seek $fd 0
   } -body {
-    set rbuf [::redis::redis_read_reply $fd ]
-    if { $rbuf eq "$buf OK" } {
-      return 1
-    }
-    return 0
-  } -cleanup CLEANUP -result 1
+    ::redis::redis_read_reply $fd 
+  } -cleanup CLEANUP -result "xxxxxxx yyyyyyyyyyyy z"
 
   test redis_call_callback {Check that redis_call_callback calls callback properly} -setup {
     set id 1
@@ -221,6 +207,7 @@ namespace eval redis::test {
       puts -nonewline "$id $type $reply"
     }
     set ::redis::callback($id) [list CB]
+    set ::redis::subscribed($id) 0
   } -body {
     ::redis::redis_call_callback $id test reply
   } -cleanup { CLEANUP; rename ::CB {} }  -output "::redis::redisHandle1 test reply"
@@ -234,6 +221,7 @@ namespace eval redis::test {
       puts -nonewline "$id $type $reply"
     }
     set ::redis::callback($id) [list CB]
+    set ::redis::subscribed($id) 0
   } -body {
     ::redis::redis_readable $fd $id
   } -cleanup CLEANUP -output {::redis::redisHandle1 eof }
@@ -247,6 +235,7 @@ namespace eval redis::test {
       puts -nonewline "$id $type $reply"
     }
     set ::redis::callback($id) [list CB]
+    set ::redis::subscribed($id) 0
     puts -nonewline $fd "+OK"
     puts -nonewline $fd "\r\n"
     seek $fd 0
@@ -263,6 +252,7 @@ namespace eval redis::test {
       puts -nonewline "$id $type $reply"
     }
     set ::redis::callback($id) [list CB]
+    set ::redis::subscribed($id) 0
     puts -nonewline $fd {$8}
     puts -nonewline $fd "\r\n"
     puts -nonewline $fd "abcdefgh"
@@ -282,12 +272,8 @@ namespace eval redis::test {
       puts -nonewline "$id $type $reply"
     }
     set ::redis::callback($id) [list CB]
-    puts -nonewline $fd "*1"
-    puts -nonewline $fd "\r\n"
-    puts -nonewline $fd {$8}
-    puts -nonewline $fd "\r\n"
-    puts -nonewline $fd "abcdefgh"
-    puts -nonewline $fd "\r\n"
+    set ::redis::subscribed($id) 0
+    puts -nonewline $fd [::redis::redis_format_message abcdefgh]
     seek $fd 0
   } -body {
     ::redis::redis_readable $fd $id
@@ -304,20 +290,8 @@ namespace eval redis::test {
       puts -nonewline "$id $type $reply"
     }
     set ::redis::callback($id) [list CB]
-    puts -nonewline $fd "*3"
-    puts -nonewline $fd "\r\n"
-    puts -nonewline $fd {$8}
-    puts -nonewline $fd "\r\n"
-    puts -nonewline $fd "abcdefgh"
-    puts -nonewline $fd "\r\n"
-    puts -nonewline $fd {$8}
-    puts -nonewline $fd "\r\n"
-    puts -nonewline $fd "abcdefgh"
-    puts -nonewline $fd "\r\n"
-    puts -nonewline $fd {$8}
-    puts -nonewline $fd "\r\n"
-    puts -nonewline $fd "abcdefgh"
-    puts -nonewline $fd "\r\n"
+    set ::redis::subscribed($id) 0
+    puts -nonewline $fd [::redis::redis_format_message abcd xyzf 0]
     seek $fd 0
   } -body {
     ::redis::redis_readable $fd $id
@@ -327,7 +301,26 @@ namespace eval redis::test {
     ::redis::redis_readable $fd $id
     ::redis::redis_readable $fd $id
     ::redis::redis_readable $fd $id
-  } -cleanup CLEANUP -output {::redis::redisHandle1 reply abcdefgh abcdefgh abcdefgh}
+  } -cleanup CLEANUP -output {::redis::redisHandle1 reply abcd xyzf 0}
+  
+  test __method__subscribe-nocallback {Ensure subscribe fails if no callback} -setup {
+    set $id 1
+    set ::redis::callback($id) {}
+  } -body {
+    ::redis::__method__subscribe $id y x
+  } -cleanup CLEANUP -returnCodes error -result "A callback must be set prior to subscribing"
+  
+  test __method__unsubscribe-singleSub {Ensure unsubscribe handles a single unsubscription} -setup {
+    set id 1
+    set fd [open /tmp/redistestfile.sock w+]
+    fconfigure $fd -translation binary
+    set ::redis::callback($id) [list CB]
+    puts -nonewline $fd [::redis::redis_format_message abcd xyzf 0]
+    seek $fd 0
+    proc ::redis::redis_write {fd args} {}
+  } -body {
+    ::redis::__method__unsubscribe $id $fd x
+  } -result "abcd xyzf 0"
 
 }
 
