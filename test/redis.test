@@ -304,7 +304,7 @@ namespace eval redis::test {
   } -cleanup CLEANUP -output {::redis::redisHandle1 reply abcd xyzf 0}
   
   test __method__subscribe-nocallback {Ensure subscribe fails if no callback} -setup {
-    set $id 1
+    set id 1
     set ::redis::callback($id) {}
   } -body {
     ::redis::__method__subscribe $id y x
