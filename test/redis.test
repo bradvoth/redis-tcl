@@ -15,7 +15,10 @@ namespace eval redis::test {
     array set ::redis::callback {}
     array set ::redis::state {} ;# State in non-blocking reply reading
     array set ::redis::statestack {} ;# Stack of states, for nested mbulks
-    catch {close $fd}
+    catch {unset ::redis::test::id}
+    catch {unset ::redis::test::val}
+    catch {unset ::redis::test::buf}
+    catch {close $::redis::test::fd}
   }
 
   namespace import ::tcltest::test
