@@ -15,7 +15,10 @@ namespace eval redis::test {
     array set ::redis::callback {}
     array set ::redis::state {} ;# State in non-blocking reply reading
     array set ::redis::statestack {} ;# Stack of states, for nested mbulks
-    catch {close $fd}
+    catch {unset ::redis::test::id}
+    catch {unset ::redis::test::val}
+    catch {unset ::redis::test::buf}
+    catch {close $::redis::test::fd}
   }
 
   namespace import ::tcltest::test
@@ -304,7 +307,7 @@ namespace eval redis::test {
   } -cleanup CLEANUP -output {::redis::redisHandle1 reply abcd xyzf 0}
   
   test __method__subscribe-nocallback {Ensure subscribe fails if no callback} -setup {
-    set $id 1
+    set id 1
     set ::redis::callback($id) {}
   } -body {
     ::redis::__method__subscribe $id y x
