@@ -2,7 +2,7 @@
 
 package require tcltest
 
-source ../src/redis.tcl
+source $::env(REDISTCL)
 
 namespace eval redis::test {
 
