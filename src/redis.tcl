@@ -95,7 +95,7 @@ proc ::redis::redis_format_message {args} {
     return $cmd
 }
 
-proc ::redis::__method__setcallback {id fd val} {
+proc ::redis::__method__setcallback {id fd callback} {
     set ::redis::callback($id) [list $callback]
 }
 
