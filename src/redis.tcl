@@ -68,7 +68,7 @@ proc ::redis::__dispatch__ {id method args} {
             set callback [lindex $args end]
             set args [lrange $args 0 end-1]
         }
-        ::redis::redis_write $fd [::redis::redis_format_message [list $method $args]]
+        ::redis::redis_write $fd [::redis::redis_format_message $method {*}$args]
         flush $fd
 
         if {!$deferred} {
@@ -87,8 +87,9 @@ proc ::redis::__dispatch__ {id method args} {
     }
 }
 
-proc ::redis::redis_format_message {args} {
-    set cmd "*[expr {[llength $args]}]\r\n"
+proc ::redis::redis_format_message {method args } {
+    set cmd "*[expr {[llength $args]+1} ]\r\n"
+    append cmd "$[string length $method]\r\n$method\r\n"
     foreach a $args {
         append cmd "$[string length $a]\r\n$a\r\n"
     }
@@ -99,14 +100,19 @@ proc ::redis::__method__setcallback {id fd callback} {
     set ::redis::callback($id) [list $callback]
 }
 
+#proc ::redis::__method__publish { id fd args} {
+  #::redis::redis_write $fd $args
+#
+#}
+
 proc ::redis::__method__subscribe {id fd args} {
-    set $::redis::subscribed($id) 1
+    set ::redis::subscribed($id) 1
     if { $::redis::callback($id) eq {} } {
         return -code error "A callback must be set prior to subscribing"
     }
     ::redis::__method__blocking $id $fd 0
     fileevent $fd readable [list ::redis::redis_readable $fd $id]
-    ::redis::redis_write $fd [::redis::redis_format_message $args]
+    ::redis::redis_write $fd [::redis::redis_format_message subscribe $args]
     flush $fd
 }
 

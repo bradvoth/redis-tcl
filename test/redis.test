@@ -312,6 +312,16 @@ namespace eval redis::test {
   } -body {
     ::redis::__method__subscribe $id y x
   } -cleanup CLEANUP -returnCodes error -result "A callback must be set prior to subscribing"
+
+  test __method__subscribe-setssubscribedflag {Ensure subscribe sets subscribed flag} -setup {
+    set id 1
+    set ::redis::callback($id) call
+    set fd [open /tmp/redistestfile.sock w+]
+    fconfigure $fd -translation binary
+  } -body {
+    ::redis::__method__subscribe $id $fd x
+    return $::redis::subscribed($id)
+  } -cleanup CLEANUP -result 1
   
   test __method__unsubscribe-singleSub {Ensure unsubscribe handles a single unsubscription} -setup {
     set id 1
