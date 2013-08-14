@@ -56,7 +56,7 @@ proc ::redis::__dispatch__ {id method args} {
     set deferred $::redis::deferred($id)
     set subscribed $::redis::subscribed($id)
     if {$subscribed} {
-        if { $method ne 'subscribe' || $method ne 'close' || $method ne 'setcallback' || $method ne 'unsubscribe' } {
+        if { $method ne "subscribe" || $method ne "close" || $method ne "setcallback" || $method ne "unsubscribe" } {
             error "This channel cannot be used for pub/sub purposes after subscription"
         }  
     }
