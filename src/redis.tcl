@@ -99,6 +99,9 @@ proc ::redis::redis_format_message {method args } {
 proc ::redis::__method__setcallback {id fd callback} {
     set ::redis::callback($id) [list $callback]
 }
+proc ::redis::__method__getcallback {id fd} {
+    return $::redis::callback($id)
+}
 
 #proc ::redis::__method__publish { id fd args} {
   #::redis::redis_write $fd $args
