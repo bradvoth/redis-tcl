@@ -56,8 +56,8 @@ proc ::redis::__dispatch__ {id method args} {
     set deferred $::redis::deferred($id)
     set subscribed $::redis::subscribed($id)
     if {$subscribed} {
-        if { $method ne 'subscribe' || $method ne 'close' || $method ne 'setcallback' || $method ne 'unsubscribe' } {
-            error "This channel cannot be used for pub/sub purposes after subscription"
+        if { $method ne "subscribe" && $method ne "close" && $method ne "setcallback" && $method ne "unsubscribe" } {
+            error "This channel can only be used for pub/sub purposes after subscription"
         }  
     }
     if {[info command ::redis::__method__$method] eq {}} {
@@ -124,7 +124,7 @@ proc ::redis::__method__unsubscribe {id fd args} {
     set ::redis::callback($id) {}
     ::redis::__method__blocking $id $fd 1
     fileevent $fd readable {}
-    ::redis::redis_write $fd UNSUBSCRIBE
+    ::redis::redis_writenl $fd UNSUBSCRIBE
     flush $fd
     set reply [::redis::redis_read_reply $fd]
     while { [lindex $reply end] > 0 } {
