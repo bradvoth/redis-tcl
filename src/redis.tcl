@@ -39,7 +39,13 @@ array set ::redis::state {} ;# State in non-blocking reply reading
 array set ::redis::statestack {} ;# Stack of states, for nested mbulks
 
 proc redis {{server 127.0.0.1} {port 6379} {defer 0}} {
-    set fd [socket $server $port]
+
+    # Catch any connection errors and error out with REDIS prepended to
+    # the error message: helps with troubleshooting
+    if {[catch {set fd [socket $server $port]} error_msg]} {
+        error "REDIS: $error_msg"
+    }
+    
     fconfigure $fd -translation binary
     set id [incr ::redis::id]
     set ::redis::fd($id) $fd
