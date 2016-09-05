@@ -3,6 +3,8 @@ redis-tcl
 
 Tcl library for redis access
 
+[![Build Status](https://travis-ci.org/d-led/redis-tcl.svg?branch=master)](https://travis-ci.org/d-led/redis-tcl)
+
 Installation:
 
 'make install' will install the library into what it detects is your library
