@@ -1,0 +1,19 @@
+language: java
+
+sudo: false
+
+services:
+  - redis-server
+
+addons:
+  apt:
+    packages:
+      - tcl
+      - tcllib
+
+cache:
+  - apt
+
+script:
+ - export REDISTCL=./src/redis.tcl
+ - tclsh test/testsuite.tcl
