@@ -15,4 +15,5 @@ cache:
   - apt
 
 script:
-  - make install
+ - export REDISTCL=./src/redis.tcl
+ - tclsh test/testsuite.tcl
