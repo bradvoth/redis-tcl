@@ -3,7 +3,7 @@ redis-tcl
 
 Tcl library for redis access
 
-[![Build Status](https://travis-ci.org/bradvoth/redis-tcl.svg?branch=master)](https://travis-ci.org/d-led/redis-tcl)
+[![Build Status](https://travis-ci.org/bradvoth/redis-tcl.svg?branch=master)](https://travis-ci.org/bradvoth/redis-tcl)
 
 Installation:
 
