@@ -18,7 +18,7 @@
 #         $r ping [list handlePong]
 #     }
 # }
-# 
+#
 # set r [redis]
 # $r blocking 0
 # $r get fo [list handlePong]
@@ -45,26 +45,57 @@ proc redis {{server 127.0.0.1} {port 6379} {defer 0}} {
     if {[catch {set fd [socket $server $port]} error_msg]} {
         error "REDIS: $error_msg"
     }
-    
+
     fconfigure $fd -translation binary
     set id [incr ::redis::id]
     set ::redis::fd($id) $fd
     set ::redis::blocking($id) 1
     set ::redis::subscribed($id) 0
     set ::redis::deferred($id) $defer
+    set ::redis::pipeline($id) ""
     ::redis::redis_reset_state $id
     interp alias {} ::redis::redisHandle$id {} ::redis::__dispatch__ $id
 }
 
-proc ::redis::__dispatch__ {id method args} {
+proc ::redis::__dispatch__ {id args} {
     set fd $::redis::fd($id)
     set blocking $::redis::blocking($id)
     set deferred $::redis::deferred($id)
     set subscribed $::redis::subscribed($id)
+
+    set method ""
+
+    set argidx  0 ; set argskip 0
+    foreach arg $args {
+        incr argidx ; if {$argskip>0} { incr argskip -1 ; continue }
+
+        switch -glob -- $arg {
+            "-defer" {
+                set deferred 1
+                set deferred_key [dict size $::redis::pipeline($id)]
+                continue
+            }
+            "-key" {
+                set deferred_key [lindex $args $argidx] ; incr argskip
+                continue
+            }
+            "--" {
+                set method [lindex $args $argidx]
+                set args [lrange $args $argidx+1 end]
+                break
+            }
+            default {
+                set method $arg
+                set args [lrange $args $argidx end]
+                break
+            }
+        }
+    }
+
     if {$subscribed} {
         if { $method ne "subscribe" && $method ne "close" && $method ne "setcallback" && $method ne "unsubscribe" } {
             error "This channel can only be used for pub/sub purposes after subscription"
-        }  
+        }
     }
     if {[info command ::redis::__method__$method] eq {}} {
         if {$blocking == 0} {
@@ -73,7 +104,12 @@ proc ::redis::__dispatch__ {id method args} {
             }
             set callback [lindex $args end]
             set args [lrange $args 0 end-1]
+        } else {
+            if { $deferred } {
+              dict set ::redis::pipeline($id) $deferred_key ""
+            }
         }
+
         ::redis::redis_write $fd [::redis::redis_format_message $method {*}$args]
         flush $fd
 
@@ -105,6 +141,7 @@ proc ::redis::redis_format_message {method args } {
 proc ::redis::__method__setcallback {id fd callback} {
     set ::redis::callback($id) [list $callback]
 }
+
 proc ::redis::__method__getcallback {id fd} {
     return $::redis::callback($id)
 }
@@ -174,6 +211,18 @@ proc ::redis::__method__close {id fd} {
 
 proc ::redis::__method__channel {id fd} {
     return $fd
+}
+
+proc ::redis::__method__collect {id fd} {
+    set result [dict create]
+
+    dict for {key value} $::redis::pipeline($id) {
+      set value [::redis::redis_read_reply $fd]
+      dict set result $key $value
+    }
+    set ::redis::pipeline($id) ""
+
+    return $result
 }
 
 proc ::redis::redis_write {fd buf} {
@@ -309,3 +358,5 @@ proc ::redis::redis_readable {fd id} {
         }
     }
 }
+
+# vim:set syntax=tcl sw=4: #
