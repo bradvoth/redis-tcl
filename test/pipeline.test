@@ -1,0 +1,37 @@
+#!/usr/bin/env tclsh
+
+package require tcltest
+
+source $::env(REDISTCL)
+
+namespace eval redis::test {
+  namespace import ::tcltest::test
+
+  ::tcltest::configure -verbose pass
+
+  test redis-defer {defer redis result collect} -setup {
+    set redis [redis]
+  } -body {
+    $redis -defer set abc 123
+    $redis -defer -key abc get abc
+
+    $redis -defer -- set def 456
+    $redis -defer -key def -- get def
+
+    $redis collect
+  } -result {0 OK abc 123 2 OK def 456}
+
+  test redis-pipeline {pipeline redis commands} -setup {
+    set redis [redis]
+  } -body {
+    $redis pipeline {
+      $redis set abc 321
+      $redis -key abc get abc
+
+      $redis set def 789
+      $redis -key def -- get def
+    }
+  } -result {0 OK abc 321 2 OK def 789}
+}
+
+::tcltest::cleanupTests

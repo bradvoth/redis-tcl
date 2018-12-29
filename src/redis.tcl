@@ -26,7 +26,7 @@
 # vwait forever
 
 package require Tcl 8.5
-package provide redis 0.1
+package provide redis 0.2
 
 namespace eval redis {}
 set ::redis::id 0
@@ -64,6 +64,7 @@ proc ::redis::__dispatch__ {id args} {
     set subscribed $::redis::subscribed($id)
 
     set method ""
+    set deferred_key ""
 
     set argidx  0 ; set argskip 0
     foreach arg $args {
@@ -106,6 +107,9 @@ proc ::redis::__dispatch__ {id args} {
             set args [lrange $args 0 end-1]
         } else {
             if { $deferred } {
+              if {$deferred_key eq ""} {
+                set deferred_key [dict size $::redis::pipeline($id)]
+              }
               dict set ::redis::pipeline($id) $deferred_key ""
             }
         }
@@ -220,6 +224,20 @@ proc ::redis::__method__collect {id fd} {
       set value [::redis::redis_read_reply $fd]
       dict set result $key $value
     }
+    set ::redis::pipeline($id) ""
+
+    return $result
+}
+
+proc ::redis::__method__pipeline {id fd body} {
+    set ::redis::deferred($id) 1
+    set ::redis::pipeline($id) ""
+
+    uplevel 1 $body
+
+    set result [__method__collect $id $fd]
+
+    set ::redis::deferred($id) 0
     set ::redis::pipeline($id) ""
 
     return $result
