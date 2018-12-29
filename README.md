@@ -13,7 +13,7 @@ using the tclsh in your path to check the output of 'info library' command.
 The method of detection should be expanded in the future to play more nicely
 with alternate tcl installations.
 
-## Usage
+## Basic Usage
 
 'package require redis' will get you started.
 
@@ -32,10 +32,27 @@ you!):
     $redis get abc
 ```
 
-## Defer and Collect
+## Pipeline, Defer and Collect
 
 There is chance that you want to send redis commands in pipeline mode, and read
 all the result back in a batch.
+
+So we have the `$redis pipeline` command for this.
+
+```tcl
+    $redis pipeline {
+        $redis set abc 321
+        $redis -key abc get abc
+
+        $redis set def 789
+        $redis -key def -- get def
+    }
+```
+
+One problem here is when complex logic are inserted between each redis command.
+The brace will be very large. And it's not good for clear reading.
+
+We noticed that the key here is defer reading of the results. So we introce `-defer` for it. 
 
 ```tcl
     $redis -defer set abc 123
@@ -50,6 +67,12 @@ all the result back in a batch.
 
     # Output: 0 OK abc 123 2 OK def 456
 ```
+
+  * Use `-defer` option to send commands to redis server first.
+  * But defer the reasult reading to later stage.
+  * Use `$redis collect` to get all the results back.
+  * Option `-key` is used to provide the key in the returned `dict`
+  * When `-key` option is missing, a sequence number is used.
 
 ## PUB/SUB
 
