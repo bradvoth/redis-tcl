@@ -1,0 +1,15 @@
+#!/usr/bin/env tclsh
+
+package require tcltest
+
+source $::env(REDISTCL)
+
+namespace eval redis::test {
+  namespace import ::tcltest::test
+
+  test redis-set-get {Test simple set and get} -body {
+    set r [redis]
+    $r set abc 123
+    $r get abc
+  } -result 123
+}
