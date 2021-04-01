@@ -1,4 +1,4 @@
-language: java
+language: generic
 
 sudo: false
 
@@ -9,7 +9,6 @@ addons:
   apt:
     packages:
       - tcl
-      - tcllib
 
 cache:
   - apt
